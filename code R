@@ -1,0 +1,507 @@
+## Load libraries
+library(tidygraph)
+library(tidyverse) 
+library(ggraph)
+library(igraph)
+library(rtweet)
+library("xlsx")
+library(tidytext)
+library(lexicon)
+library(textdata)
+library(wordcloud)
+library(tm)
+library(sentimentr)
+library(scales)
+library(igraph)
+
+
+
+##Read data
+
+data <- read.xlsx("athletes.xlsx", sheetIndex= 1, header=TRUE)
+
+
+head(data)
+str(data)
+
+
+
+
+
+
+
+
+
+##---------------Tweets---------------##
+
+
+
+## Number of Tweets per day
+data %>%
+  group_by(Date) %>%
+  summarise(total_tweets = n()) %>%
+  ggplot(aes(x = Date, y = total_tweets)) +
+  geom_line() +
+  labs(title = "Number of Tweets per Day", x = "Date", y = "Number of Tweets")
+
+
+
+
+
+## Average engagement per day
+data %>%
+  group_by(Date) %>%
+  summarise(avg_likes = mean(Likes), avg_retweets = mean(Retweets)) %>%
+  ggplot(aes(x = Date)) +
+  geom_line(aes(y = avg_likes, color = "Likes")) +
+  geom_line(aes(y = avg_retweets, color = "Retweets")) +
+  labs(title = "Average Likes and Retweets per Day", x = "Date", y = "Average Engagement")+
+scale_y_continuous(labels = scales::comma)+  #Format y axis with commas for large numbers
+scale_color_manual(values = c("Likes" = "blue", "Retweets" = "red"))
+
+
+
+
+
+
+
+##---------------Retweets, Followers---------------##
+
+
+
+
+## Summarize retweets for each athlete
+
+data %>% 
+  group_by(Name) %>%
+  summarise(total_retweet = sum(Retweets)) %>%
+  arrange(desc(total_retweet)) %>% 
+  head()
+
+
+
+
+
+## Calcualte Retweets for each athlete 
+top_retweets <- data %>%
+  group_by(Name) %>%
+  summarise(total_retweets = sum(Retweets)) %>%
+  arrange(desc(total_retweets))
+
+
+
+## Visualization
+wordcloud(top_retweets$Name, top_retweets$total_retweets, min.freq = 1, 
+          scale = c(3, 0.5), random.order = FALSE, rot.per = 0.25, 
+          colors = brewer.pal(8, "Dark2"))
+
+
+
+
+
+
+
+
+
+
+##---------------COMPARISON OF ATHLETES---------------##
+
+
+
+
+
+
+
+
+## Number of Followers
+followers_data <- data %>%
+  select(Name, Followers) %>%
+  distinct() %>%
+  arrange(desc(Followers))
+
+
+## Graph
+ggplot(followers_data, aes(x = reorder(Name, Followers), y = Followers)) +
+  geom_bar(stat = "identity", fill = "green") +
+  coord_flip() +
+  labs(title = "Followers per Athlete", x = "Athlete", y = "Followers")+
+ scale_y_continuous(labels = function(x) format(x, big.mark = ".", scientific = FALSE))+
+theme_minimal() +  
+  theme(axis.text.y = element_text(size = 10))  
+
+
+
+
+
+
+
+
+
+## Average Likes και Retweets per athlete
+
+athlete_comparison <- data %>%
+  group_by(Name) %>%
+  summarise(avg_likes = mean(Likes), avg_retweets = mean(Retweets)) %>%
+  arrange(desc(avg_likes))
+
+## Graph
+ggplot(athlete_comparison, aes(x = reorder(Name, avg_likes), y = avg_likes)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  coord_flip() +
+  labs(title = "Average Likes per Athlete", x = "Athlete", y = "Average Likes")
+
+
+
+
+
+
+## Total Retweets per athlete
+total_retweets <- data %>%
+  group_by(Name) %>%
+  summarise(total_retweets = sum(Retweets)) %>%
+  arrange(desc(total_retweets))
+
+
+
+
+## Graph
+ggplot(total_retweets, aes(x = reorder(Name, total_retweets), y = total_retweets)) +
+  geom_bar(stat = "identity", fill = "darkgray") +
+  coord_flip() +
+  labs(title = "Total Retweets per Athlete", x = "Athlete", y = "Total Retweets") +
+ scale_y_continuous(labels = function(x) format(x, big.mark = ".", scientific = FALSE))+
+theme_minimal() +  
+  theme(axis.text.y = element_text(size = 10))  
+
+
+
+
+
+
+
+
+
+
+##---------------Hashtags---------------##
+
+
+
+## Count the occurrences of each hashtag
+hashtag_frequencies <- data %>%
+  filter(!is.na(Hashtag)) %>%   # Remove missing values if any
+  count(Hashtag, sort = TRUE)   # Count occurrences of each hashtag
+
+## Display the most frequent hashtags
+print(hashtag_frequencies)
+
+
+
+## Select the top 3 most frequent hashtags
+top_hashtags <- hashtag_frequencies %>%
+  top_n(3, n)
+
+
+## Create a bar plot to visualize the most frequent hashtags
+ggplot(top_hashtags, aes(x = reorder(Hashtag, n), y = n, fill = Hashtag)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  coord_flip() +                          #Flip coordinates 
+  labs(title = "Top 3 Most Frequent Hashtags in Tweets",
+       x = "Hashtags",
+       y = "Frequency") +
+  theme_minimal()
+
+
+
+
+
+
+
+
+## Visualization
+
+hashtag_freq <- table(data$Hashtag)
+print(hashtag_freq)
+
+wordcloud(names(hashtag_freq), freq = as.numeric(hashtag_freq), min.freq = 1, scale=c(7,0.6),
+colors=brewer.pal(8, "Dark2"),  random.color= TRUE, random.order = FALSE, max.words = 40)
+
+
+
+
+
+
+
+
+
+
+##-------------------Words-------------------##
+
+
+## Tokenize the tweets into words
+word_frequencies <- data %>%
+  unnest_tokens(word, Tweets) %>%         # Split tweets into words
+  anti_join(stop_words) %>%               # Remove common stopwords (English)
+  count(word, sort = TRUE)                # Count occurrences of each word
+
+## Display the most frequent words
+print(word_frequencies)
+
+
+
+
+word_frequencies[1:20,]
+word_freq <- word_frequencies[c(1:6, 8, 9, 13, 16, 18, 20),]
+
+
+
+
+## Create a bar plot to visualize the most frequent words
+ggplot(word_freq, aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +                          # Flip coordinates for easier reading
+  labs(title = "Top 10 Most Frequent Words in Tweets",
+       x = "Words",
+       y = "Frequency") +
+  theme_minimal()
+
+
+## Colourful graph
+ggplot(word_freq, aes(x = reorder(word, n), y = n, fill = word)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  coord_flip() +                          # Flip coordinates for easier reading
+  labs(title = "Top 12 Most Frequent Words in Tweets",
+       x = "Words",
+       y = "Frequency") +
+  theme_minimal()
+
+
+
+
+
+
+
+##------------------------------------------------------------##
+##--------------------Sentiment Analysis----------------------##
+
+
+## Load the lexicon bing
+sentiment_bing <- get_sentiments("bing")
+
+## Compination of the tweets and bing for sentiment analysis
+tweet_sentiment <- data %>%
+  unnest_tokens(word, Tweets) %>%          # Tokenization of Tweets into Words
+  inner_join(sentiment_bing) %>%           # Combination with lexicon bing
+  count(word, sentiment, sort = TRUE)      # Word count based on Sentiment Analysis
+
+
+print(tweet_sentiment)
+head(tweet_sentiment)
+
+
+
+
+
+
+
+## Visualization of positive and negative words 
+tweet_sentiment %>%
+  group_by(sentiment) %>%
+  top_n(10, n) %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = sentiment)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(title = "Top Positive and Negative Words in Tweets",
+       x = "Words", y = "Frequency") +
+  coord_flip() +
+  theme_minimal()
+
+
+
+
+
+
+wordcloud(tweet_sentiment[,1],  min.freq = 1, scale=c(7,0.6),
+colors=brewer.pal(8, "Dark2"),  random.color= TRUE, random.order = FALSE, max.words = 100)
+
+
+
+
+
+## sentiment analysis for words
+
+word_frequencies %>%
+      inner_join(get_sentiments("bing")) %>%
+      count(sentiment, sort = TRUE)
+
+
+
+
+
+
+
+
+
+## Further analysis
+
+
+element_id <- sentiment(get_sentences(data$Tweets))[,1]
+
+
+tweet_sentences_data <- sentiment(get_sentences(data$Tweets)) %>% 
+  group_by(element_id) %>% 
+  summarize(meanSentiment = mean(sentiment))
+head(tweet_sentences_data)
+
+
+
+print(paste0("Most negative tweets sentiment: ", min(tweet_sentences_data$meanSentiment)))
+print(paste0("Most positive tweets sentiment: ", max(tweet_sentences_data$meanSentiment)))
+print(paste0("# of Negative Tweets: ", sum(tweet_sentences_data$meanSentiment < 0)))
+print(paste0("# of Neutral Tweets: ", sum(tweet_sentences_data$meanSentiment == 0)))
+print(paste0("# of Positive Tweets: ", sum(tweet_sentences_data$meanSentiment > 0)))
+
+
+
+
+slices <- c(sum(tweet_sentences_data$meanSentiment < 0), sum(tweet_sentences_data$meanSentiment == 0),
+            sum(tweet_sentences_data$meanSentiment > 0))
+labels <- c("Negative Tweets: ", "Neutral Tweets: ", "Positive Tweets: ")
+pct <- round(slices/sum(slices)*100)
+labels <- paste(labels, pct, "%", sep = "") #customize labeling
+
+
+## Add in appropriate colors for positive, neutral, negative
+pie(slices, labels = labels, col=c('red', 'yellow', 'green'), 
+   main="Tweet Sentiment Percentages")
+
+
+
+
+
+
+
+##--------------------------------------------------------------##
+##---------------------Centrality Measures---------------------##
+
+
+
+##Read data
+
+DATA <- read.xlsx("data.xlsx", sheetIndex= 1, header=TRUE)
+head(DATA)
+
+
+
+
+## Adjacency matrix
+adj_matrix <- table(DATA$athlete, DATA$follower)
+
+
+
+## Create the graph
+g <- graph_from_incidence_matrix(adj_matrix)
+is_connected(g)
+
+
+
+## Centrality measures
+degree_centr <- degree(g)
+closeness_centr <- closeness(g)
+betweenness_centr <- betweenness(g)
+eigen_centr <- eigen_centrality(g)$vector
+
+
+
+d <- sort(degree_centr, decreasing=TRUE)
+d[1:10]
+closeness_centr[1:10]
+betweenness_centr[1:10]
+eigen_centr[1:10]
+
+
+
+
+
+## Graph
+
+plot(g)
+
+## Define the characteristics for the network
+V(g)$color <- ifelse(V(g)$type == TRUE, "orange", "blue")   
+V(g)$size <- ifelse(V(g)$type == TRUE, 1, 8)  
+V(g)$label <- V(g)$name  
+V(g)$label.cex <- 0.1  
+
+
+## The names of the athletes for the graph
+show_labels <- V(g)$name %in% c("Simone Biles", "LeBron James", "Giannis Antetokoympo",
+"Katie Ledecky", "Noah Lyles, OLY", "Eliud Kipchoge - EGH", "Novak Djokovic",
+"Rafa Nadal", "Sha'Carri Richardson", "Stephen Curry")
+
+
+
+## Graph
+plot(g,
+    vertex.label = ifelse(show_labels, V(g)$name, ""),
+     vertex.label.cex = 0.9,             # size tags
+     vertex.size = V(g)$size,     # size node
+     vertex.color = V(g)$color,   # node color
+     edge.arrow.size = 0.8,              # arrow size
+     vertex.label.color = "black",       # tag color
+     edge.color = "darkgray",     # edge color
+     layout = layout_with_fr(g))  #force-directed layout
+
+
+
+
+
+
+
+
+
+
+## Subgraph followers
+important_followers <- names(d[1:100])  ## top 100 followers
+subgraph <- induced_subgraph(g, V(g)$name %in% important_followers)
+
+
+
+
+V(subgraph)$color <- ifelse(V(subgraph)$type == TRUE, "orange", "blue")   
+V(subgraph)$size <- ifelse(V(subgraph)$type == TRUE, 2, 10)  
+V(subgraph)$label <- V(subgraph)$name  
+V(subgraph)$label.cex <- 0.9  
+V(subgraph)$label.color <- "black"  
+
+
+
+
+
+
+
+plot(subgraph,
+     vertex.label = ifelse(show_labels, V(g)$name, ""),
+     vertex.label.cex = 0.9,             
+     vertex.size = V(subgraph)$size,     
+     vertex.color = V(subgraph)$color,   
+     edge.arrow.size = 0.8,              
+     vertex.label.color = "black",       
+     edge.color = E(subgraph)$color,     
+     layout = layout_with_fr(subgraph))  
+
+
+
+
+plot(subgraph,
+     vertex.label.cex = 0.7,             
+     vertex.size = V(subgraph)$size,     
+     vertex.color = V(subgraph)$color,   
+     edge.arrow.size = 0.7,              
+     vertex.label.color = "black",       
+     edge.color = E(subgraph)$color,     
+     layout = layout_with_dh(subgraph))  
+
+
+
+
+
